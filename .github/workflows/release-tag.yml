@@ -8,10 +8,6 @@ on:
         description: "Upload final artifacts to R2"
         default: false
 
-  push:
-    tags:
-      - "v[0-9]+.[0-9]+.[0-9]+"
-
 name: Release Tag
 
 # We must only run one release workflow at a time to prevent corrupting

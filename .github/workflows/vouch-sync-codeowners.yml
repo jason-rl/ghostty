@@ -1,6 +1,4 @@
 on:
-  schedule:
-    - cron: "0 0 * * 1" # Every Monday at midnight UTC
   workflow_dispatch:
 
 name: "Vouch - Sync CODEOWNERS"
