@@ -549,6 +549,7 @@ pub const Surface = extern struct {
     };
 
     const Private = struct {
+        media_viewport: ?@import("../../../media/main.zig").Viewport = null,
         /// The configuration that this surface is using.
         config: ?*Config = null,
 
@@ -3282,12 +3283,37 @@ pub const Surface = extern struct {
         const priv = self.private();
         const surface = priv.core_surface orelse return 1;
 
+        self.syncMediaViewport();
         surface.renderer.drawFrame(true) catch |err| {
             log.warn("failed to draw frame err={}", .{err});
             return 0;
         };
 
         return 1;
+    }
+
+    fn syncMediaViewport(self: *Self) void {
+        const surface = self.core() orelse return;
+        const SplitTree = @import("split_tree.zig").SplitTree;
+        const parent = ext.getAncestor(SplitTree, self.as(gtk.Widget)) orelse return;
+        const widget = self.private().gl_area.as(gtk.Widget);
+        // graphene_rect_t is four floats; keep the C boundary local.
+        const Rect = extern struct { x: f32, y: f32, width: f32, height: f32 };
+        const BoundsAPI = struct {
+            extern "c" fn gtk_widget_compute_bounds(*gtk.Widget, *gtk.Widget, *Rect) c_int;
+        };
+        var rect: Rect = undefined;
+        if (BoundsAPI.gtk_widget_compute_bounds(widget, parent.as(gtk.Widget), &rect) == 0) return;
+        const scale = self.getContentScale();
+        const viewport: @import("../../../media/main.zig").Viewport = .{
+            .x = rect.x * @as(f32, @floatCast(scale.x)),
+            .y = rect.y * @as(f32, @floatCast(scale.y)),
+            .width = @as(f32, @floatFromInt(parent.as(gtk.Widget).getWidth())) * @as(f32, @floatCast(scale.x)),
+            .height = @as(f32, @floatFromInt(parent.as(gtk.Widget).getHeight())) * @as(f32, @floatCast(scale.y)),
+        };
+        if (self.private().media_viewport) |old| if (std.meta.eql(old, viewport)) return;
+        self.private().media_viewport = viewport;
+        surface.mediaViewportCallback(viewport);
     }
 
     fn glareaResize(

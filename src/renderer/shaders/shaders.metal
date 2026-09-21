@@ -240,6 +240,7 @@ fragment float4 bg_color_fragment(
 struct BgImageVertexIn {
   float opacity [[attribute(0)]];
   uint8_t info [[attribute(1)]];
+  float4 viewport [[attribute(2)]];
 };
 
 enum BgImagePosition : uint8_t {
@@ -279,6 +280,7 @@ struct BgImageVertexOut {
   float2 scale [[flat]];
   float opacity [[flat]];
   bool repeat [[flat]];
+  bool nv12 [[flat]];
 };
 
 vertex BgImageVertexOut bg_image_vertex(
@@ -313,8 +315,10 @@ vertex BgImageVertexOut bg_image_vertex(
 
   out.repeat = (in.info & BG_IMAGE_REPEAT) == BG_IMAGE_REPEAT;
 
-  float2 screen_size = uniforms.screen_size;
+  float2 screen_size = in.viewport.z > 0 ? in.viewport.zw : uniforms.screen_size;
   float2 tex_size = float2(image.get_width(), image.get_height());
+  out.nv12 = (in.info & 128u) != 0;
+  if (out.nv12) tex_size.y *= 2.0 / 3.0;
 
   float2 dest_size = tex_size;
   switch (in.info & BG_IMAGE_FIT) {
@@ -381,7 +385,7 @@ vertex BgImageVertexOut bg_image_vertex(
     } break;
   }
 
-  out.offset = dest_offset;
+  out.offset = dest_offset - in.viewport.xy;
   out.scale = tex_size / dest_size;
 
   // We load a fully opaque version of the bg color and combine it with
@@ -394,6 +398,13 @@ vertex BgImageVertexOut bg_image_vertex(
   ).rgb, float(uniforms.bg_color.a) / 255.0);
 
   return out;
+}
+
+// NV12 uses interleaved chroma in the lower third of the R8 upload.
+static float2 media_chroma(texture2d<float> image, int2 p, int2 extent) {
+  p = clamp(p, int2(0), extent / 2 - 1);
+  uint2 uv(p.x * 2, extent.y + p.y);
+  return float2(image.read(uv).r, image.read(uv + uint2(1, 0)).r);
 }
 
 fragment float4 bg_image_fragment(
@@ -420,9 +431,30 @@ fragment float4 bg_image_fragment(
     tex_coord = fmod(fmod(tex_coord, tex_size) + tex_size, tex_size);
   }
 
-  float4 rgba = image.sample(textureSampler, tex_coord);
+  float4 rgba;
+  if (in.nv12) {
+    float2 extent(image.get_width(), image.get_height() * 2 / 3);
+    if (any(tex_coord < 0) || any(tex_coord >= extent)) {
+      rgba = float4(0);
+    } else {
+      float y = image.sample(textureSampler, clamp(tex_coord, float2(0.5), extent - 0.5)).r;
+      float2 chroma_pos = tex_coord * 0.5 - 0.5;
+      int2 base = int2(floor(chroma_pos));
+      float2 fraction = fract(chroma_pos);
+      float2 chroma = mix(
+        mix(media_chroma(image, base, int2(extent)), media_chroma(image, base + int2(1, 0), int2(extent)), fraction.x),
+        mix(media_chroma(image, base + int2(0, 1), int2(extent)), media_chroma(image, base + int2(1, 1), int2(extent)), fraction.x),
+        fraction.y) - float2(128.0 / 255.0);
+      float u = chroma.x;
+      float v = chroma.y;
+      rgba = float4(clamp(float3(y + 1.5748 * v, y - 0.187324 * u - 0.468124 * v, y + 1.8556 * u), 0.0, 1.0), 1);
+      if (uniforms.use_linear_blending) rgba = linearize(rgba);
+    }
+  } else {
+    rgba = image.sample(textureSampler, tex_coord);
+  }
 
-  if (!uniforms.use_linear_blending) {
+  if (!in.nv12 && !uniforms.use_linear_blending) {
     rgba = unlinearize(rgba);
   }
 

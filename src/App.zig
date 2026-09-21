@@ -22,6 +22,7 @@ const SurfaceList = std.ArrayListUnmanaged(*apprt.Surface);
 
 /// General purpose allocator
 alloc: Allocator,
+media: @import("media/main.zig").Manager = .{},
 
 /// The list of surfaces that are currently active.
 surfaces: SurfaceList,
@@ -113,6 +114,7 @@ pub fn deinit(self: *App) void {
     // should gracefully close all surfaces.
     assert(self.font_grid_set.count() == 0);
     self.font_grid_set.deinit();
+    self.media.deinit();
 }
 
 pub fn destroy(self: *App) void {

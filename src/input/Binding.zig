@@ -757,6 +757,10 @@ pub const Action = union(enum) {
     /// version can be found by running `ghostty +version`.
     toggle_command_palette,
 
+    /// Store or remove the Holodex API key in the native credential store.
+    set_holodex_api_key,
+    remove_holodex_api_key,
+
     /// Toggle the quick terminal.
     ///
     /// The quick terminal, also known as the "Quake-style" or drop-down
@@ -1361,6 +1365,8 @@ pub const Action = union(enum) {
             .toggle_secure_input,
             .toggle_mouse_reporting,
             .toggle_command_palette,
+            .set_holodex_api_key,
+            .remove_holodex_api_key,
             .toggle_background_opacity,
             .show_on_screen_keyboard,
             .reset_window_size,

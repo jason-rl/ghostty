@@ -294,6 +294,7 @@ fn setQosClass(self: *const Thread) void {
 
 fn syncDrawTimer(self: *Thread) void {
     skip: {
+        if (@hasDecl(rendererpkg.Renderer, "hasMedia") and self.renderer.hasMedia()) break :skip;
         // If our renderer supports animations and has them, then we
         // can apply draw timer based on custom shader animation configuration.
         if (@hasDecl(rendererpkg.Renderer, "hasAnimations") and
@@ -326,7 +327,7 @@ fn syncDrawTimer(self: *Thread) void {
     self.draw_h.run(
         &self.loop,
         &self.draw_c,
-        DRAW_INTERVAL,
+        if (@hasDecl(rendererpkg.Renderer, "animationInterval")) self.renderer.animationInterval() else DRAW_INTERVAL,
         Thread,
         self,
         drawCallback,
@@ -350,6 +351,9 @@ fn drainMailbox(self: *Thread) !void {
         switch (message) {
             .crash => @panic("crash request, crashing intentionally"),
 
+            .media_viewport => |v| {
+                if (@hasDecl(rendererpkg.Renderer, "setMediaViewport")) self.renderer.setMediaViewport(v);
+            },
             .visible => |v| visible: {
                 // If our state didn't change we do nothing.
                 if (self.flags.visible == v) break :visible;
@@ -585,9 +589,12 @@ fn drawCallback(
     // Draw
     t.drawFrame(false);
 
+    // A static media image only needs polling until its first decoded frame.
+    if (@hasDecl(rendererpkg.Renderer, "hasAnimations") and !t.renderer.hasAnimations()) t.draw_active = false;
+
     // Only continue if we're still active
     if (t.draw_active) {
-        t.draw_h.run(&t.loop, &t.draw_c, DRAW_INTERVAL, Thread, t, drawCallback);
+        t.draw_h.run(&t.loop, &t.draw_c, if (@hasDecl(rendererpkg.Renderer, "animationInterval")) t.renderer.animationInterval() else DRAW_INTERVAL, Thread, t, drawCallback);
     }
 
     return .disarm;

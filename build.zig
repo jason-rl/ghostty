@@ -42,6 +42,21 @@ pub fn build(b: *std.Build) !void {
         "Run the app under valgrind",
     );
     const test_step = b.step("test", "Run tests");
+    // Media tests do not require a GPU, Metal compiler, or application runtime.
+    const media_tests = b.addTest(.{
+        .name = "media-tests",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/media/main.zig"),
+            .target = config.target,
+            .optimize = .Debug,
+            .link_libc = true,
+        }),
+    });
+    if (b.lazyDependency("wuffs", .{ .target = config.target, .optimize = config.optimize })) |wuffs| {
+        media_tests.root_module.addImport("wuffs", wuffs.module("wuffs"));
+    }
+    b.step("test-media", "Run background media tests without a GPU").dependOn(&b.addRunArtifact(media_tests).step);
+
     const test_lib_vt_step = b.step(
         "test-lib-vt",
         "Run libghostty-vt tests",

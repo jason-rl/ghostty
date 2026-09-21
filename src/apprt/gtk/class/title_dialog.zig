@@ -114,6 +114,11 @@ pub const TitleDialog = extern struct {
             priv.entry.getBuffer().setText(v, -1);
         }
 
+        if (priv.target == .holodex) {
+            priv.entry.setVisibility(0);
+            priv.entry.setInputPurpose(.password);
+        }
+
         // Set the title for the dialog
         self.as(Dialog.Parent).setHeading(priv.target.title());
 
@@ -140,6 +145,7 @@ pub const TitleDialog = extern struct {
 
         // Emit our signal with the new title.
         const title = std.mem.span(self.private().entry.getBuffer().getText());
+        defer if (self.private().target == .holodex) self.private().entry.getBuffer().setText("", -1);
         signals.set.impl.emit(
             self,
             null,
@@ -220,10 +226,12 @@ pub const TitleDialog = extern struct {
 pub const Target = enum(c_int) {
     surface,
     tab,
+    holodex,
     pub fn title(self: Target) [*:0]const u8 {
         return switch (self) {
             .surface => i18n._("Change Terminal Title"),
             .tab => i18n._("Change Tab Title"),
+            .holodex => i18n._("Set Holodex API Key"),
         };
     }
 

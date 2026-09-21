@@ -29,6 +29,10 @@ extension Ghostty {
         /// configuration (i.e. font size) from the previously focused window. This would override this.
         @Published private(set) var config: Config
 
+        #if os(macOS)
+        lazy var holodexCredentials = HolodexCredentials(app: self)
+        #endif
+
         /// Preferred config file than the default ones
         private var configPath: String?
         /// The ghostty app instance. We only have one of these for the entire app, although I guess
@@ -99,6 +103,9 @@ extension Ghostty {
                 object: nil)
 #endif
 
+            #if os(macOS)
+            holodexCredentials.load()
+            #endif
             self.readiness = .ready
         }
 
@@ -577,6 +584,13 @@ extension Ghostty {
 
             case GHOSTTY_ACTION_RENDERER_HEALTH:
                 rendererHealth(app, target: target, v: action.action.renderer_health)
+
+            case GHOSTTY_ACTION_HOLODEX_KEY:
+                #if os(macOS)
+                guard let userdata = ghostty_app_userdata(app) else { return false }
+                let owner = Unmanaged<App>.fromOpaque(userdata).takeUnretainedValue()
+                owner.holodexCredentials.present(remove: action.action.holodex_key.remove)
+                #endif
 
             case GHOSTTY_ACTION_TOGGLE_COMMAND_PALETTE:
                 toggleCommandPalette(app, target: target)

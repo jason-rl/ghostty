@@ -45,6 +45,12 @@ pub fn init(
     height: usize,
     data: ?[]const u8,
 ) Error!Self {
+    // NV12 luma rows need byte alignment even when their even width is not
+    // divisible by four. Restore context state for the embedding GTK renderer.
+    var unpack_alignment: c_int = 4;
+    gl.glad.context.GetIntegerv.?(gl.c.GL_UNPACK_ALIGNMENT, &unpack_alignment);
+    gl.glad.context.PixelStorei.?(gl.c.GL_UNPACK_ALIGNMENT, 1);
+    defer gl.glad.context.PixelStorei.?(gl.c.GL_UNPACK_ALIGNMENT, unpack_alignment);
     const tex = gl.Texture.create() catch return error.OpenGLFailed;
     errdefer tex.destroy();
     {
@@ -89,6 +95,12 @@ pub fn replaceRegion(
     height: usize,
     data: []const u8,
 ) Error!void {
+    // NV12 luma rows need byte alignment even when their even width is not
+    // divisible by four. Restore context state for the embedding GTK renderer.
+    var unpack_alignment: c_int = 4;
+    gl.glad.context.GetIntegerv.?(gl.c.GL_UNPACK_ALIGNMENT, &unpack_alignment);
+    gl.glad.context.PixelStorei.?(gl.c.GL_UNPACK_ALIGNMENT, 1);
+    defer gl.glad.context.PixelStorei.?(gl.c.GL_UNPACK_ALIGNMENT, unpack_alignment);
     const texbind = self.texture.bind(self.target) catch return error.OpenGLFailed;
     defer texbind.unbind();
     texbind.subImage2D(

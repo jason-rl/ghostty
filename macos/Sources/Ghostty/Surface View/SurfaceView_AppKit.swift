@@ -475,6 +475,27 @@ extension Ghostty {
             }
         }
 
+        override func layout() {
+            super.layout()
+            syncMediaViewport()
+        }
+
+        private func syncMediaViewport() {
+            guard let controller = window?.windowController as? BaseTerminalController else { return }
+            let views = controller.surfaceTree.filter { $0.window === window && !$0.isHiddenOrHasHiddenAncestor }
+            let content = views.reduce(CGRect.null) { $0.union($1.convert($1.bounds, to: nil)) }
+            guard !content.isNull, content.width > 0, content.height > 0 else { return }
+            let scale = window?.backingScaleFactor ?? 1
+            for view in views {
+                guard let surface = view.surface else { continue }
+                let rect = view.convert(view.bounds, to: nil)
+                ghostty_surface_set_media_viewport(surface,
+                    Float((rect.minX - content.minX) * scale),
+                    Float((content.maxY - rect.maxY) * scale),
+                    Float(content.width * scale), Float(content.height * scale))
+            }
+        }
+
         func sizeDidChange(_ size: CGSize) {
             // Ghostty wants to know the actual framebuffer size... It is very important
             // here that we use "size" and NOT the view frame. If we're in the middle of
@@ -484,6 +505,7 @@ extension Ghostty {
             setSurfaceSize(width: UInt32(scaledSize.width), height: UInt32(scaledSize.height))
             // Store this size so we can reuse it when backing properties change
             contentSize = size
+            DispatchQueue.main.async { [weak self] in self?.syncMediaViewport() }
         }
 
         private func setSurfaceSize(width: UInt32, height: UInt32) {

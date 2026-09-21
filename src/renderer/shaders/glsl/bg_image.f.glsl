@@ -11,8 +11,17 @@ flat in vec2 offset;
 flat in vec2 scale;
 flat in float opacity;
 flat in uint repeat;
+flat in uint nv12;
 
 layout(location = 0) out vec4 out_FragColor;
+
+// Chroma is interleaved in the lower third of the R8 texture. Interpolate
+// U and V independently so filtering never mixes the two components.
+vec2 media_chroma(ivec2 p, ivec2 extent) {
+    p = clamp(p, ivec2(0), extent / 2 - 1);
+    ivec2 uv = ivec2(p.x * 2, extent.y + p.y);
+    return vec2(texelFetch(image, uv, 0).r, texelFetch(image, uv + ivec2(1, 0), 0).r);
+}
 
 void main() {
     bool use_linear_blending = (bools & USE_LINEAR_BLENDING) != 0;
@@ -24,6 +33,7 @@ void main() {
     vec2 tex_coord = (gl_FragCoord.xy - offset) * scale;
 
     vec2 tex_size = textureSize(image, 0);
+    if (nv12 != 0u) tex_size.y *= 2.0 / 3.0;
 
     // If we need to repeat the texture, wrap the coordinates.
     if (repeat != 0) {
@@ -39,9 +49,24 @@ void main() {
         rgba = vec4(0.0);
     } else {
         // We divide by the texture size to normalize for sampling.
-        rgba = texture(image, tex_coord / tex_size);
+        if (nv12 != 0u) {
+            float y = texture(image, clamp(tex_coord, vec2(0.5), tex_size - 0.5) / vec2(textureSize(image, 0))).r;
+            vec2 chroma_pos = tex_coord * 0.5 - 0.5;
+            ivec2 base = ivec2(floor(chroma_pos));
+            vec2 fraction = fract(chroma_pos);
+            vec2 chroma = mix(
+                mix(media_chroma(base, ivec2(tex_size)), media_chroma(base + ivec2(1, 0), ivec2(tex_size)), fraction.x),
+                mix(media_chroma(base + ivec2(0, 1), ivec2(tex_size)), media_chroma(base + ivec2(1, 1), ivec2(tex_size)), fraction.x),
+                fraction.y) - vec2(128.0 / 255.0);
+            float u = chroma.x;
+            float v = chroma.y;
+            rgba = vec4(clamp(vec3(y + 1.5748 * v, y - 0.187324 * u - 0.468124 * v, y + 1.8556 * u), 0.0, 1.0), 1.0);
+            if (use_linear_blending) rgba = linearize(rgba);
+        } else {
+            rgba = texture(image, tex_coord / tex_size);
+        }
 
-        if (!use_linear_blending) {
+        if (nv12 == 0u && !use_linear_blending) {
             rgba = unlinearize(rgba);
         }
 

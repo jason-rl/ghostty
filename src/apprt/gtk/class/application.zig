@@ -399,6 +399,8 @@ pub const Application = extern struct {
             .saved_language = saved_language,
         };
 
+        @import("../holodex.zig").load(self);
+
         // Signals
         _ = gobject.Object.signals.notify.connect(
             self,
@@ -753,6 +755,13 @@ pub const Application = extern struct {
             .toggle_quick_terminal => return Action.toggleQuickTerminal(self),
             .toggle_tab_overview => return Action.toggleTabOverview(target),
             .toggle_window_decorations => return Action.toggleWindowDecorations(target),
+            .holodex_key => {
+                const parent = switch (target) {
+                    .surface => |surface| surface.rt_surface.surface.as(gtk.Widget),
+                    .app => return false,
+                };
+                @import("../holodex.zig").present(self, parent, value.remove);
+            },
             .toggle_command_palette => return Action.toggleCommandPalette(target),
             .toggle_split_zoom => return Action.toggleSplitZoom(target),
             .show_on_screen_keyboard => return Action.showOnScreenKeyboard(target),

@@ -403,7 +403,7 @@ pub inline fn imageTextureOptions(
     _ = self;
     return .{
         .format = format.toPixelFormat(),
-        .internal_format = if (srgb) .srgba else .rgba,
+        .internal_format = if (format == .gray) .r8 else if (srgb) .srgba else .rgba,
         .target = .@"2D",
         // TODO: Generate mipmaps for image textures and use
         //       linear_mipmap_linear filtering so that they

@@ -1422,6 +1422,12 @@ pub const CAPI = struct {
 
     /// Tick the event loop. This should be called whenever the "wakeup"
     /// callback is invoked for the runtime.
+    export fn ghostty_app_set_holodex_key(v: *App, key: ?[*:0]const u8, failed: bool) void {
+        v.core_app.media.setKey(if (key) |k| std.mem.span(k) else null, failed) catch {
+            v.core_app.media.setKey(null, true) catch {};
+        };
+    }
+
     export fn ghostty_app_tick(v: *App) void {
         v.core_app.tick(v) catch |err| {
             log.err("error app tick err={}", .{err});
@@ -1692,6 +1698,11 @@ pub const CAPI = struct {
 
     /// Update the size of a surface. This will trigger resize notifications
     /// to the pty and the renderer.
+    export fn ghostty_surface_set_media_viewport(surface: *Surface, x: f32, y: f32, width: f32, height: f32) void {
+        if (!std.math.isFinite(x) or !std.math.isFinite(y) or !std.math.isFinite(width) or !std.math.isFinite(height) or width < 0 or height < 0) return;
+        surface.core_surface.mediaViewportCallback(.{ .x = x, .y = y, .width = width, .height = height });
+    }
+
     export fn ghostty_surface_set_size(surface: *Surface, w: u32, h: u32) void {
         surface.updateSize(w, h);
     }

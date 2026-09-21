@@ -22,3 +22,6 @@ rt_surface: *apprt.Surface,
 
 /// The renderer thread.
 thread: *renderer.Thread,
+
+/// Shared application media players.
+media: *@import("../media/main.zig").Manager,

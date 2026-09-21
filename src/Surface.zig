@@ -554,6 +554,7 @@ pub fn init(
         .surface_mailbox = .{ .surface = self, .app = app_mailbox },
         .rt_surface = rt_surface,
         .thread = &self.renderer_thread,
+        .media = &app.media,
     });
     errdefer renderer_impl.deinit();
 
@@ -5764,6 +5765,12 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             log.debug("mouse reporting toggled: {}", .{self.config.mouse_reporting});
         },
 
+        .set_holodex_api_key, .remove_holodex_api_key => return try self.rt_app.performAction(
+            .{ .surface = self },
+            .holodex_key,
+            .{ .remove = action == .remove_holodex_api_key },
+        ),
+
         .toggle_command_palette => return try self.rt_app.performAction(
             .{ .surface = self },
             .toggle_command_palette,
@@ -6794,4 +6801,10 @@ test "Surface: rectangle selection logic" {
         9, 2, // expected end
         true, //rectangle selection
     );
+}
+
+/// Window-relative physical-pixel coordinates for continuous split backgrounds.
+pub fn mediaViewportCallback(self: *Surface, viewport: @import("media/main.zig").Viewport) void {
+    _ = self.renderer_thread.mailbox.push(.{ .media_viewport = viewport }, .{ .forever = {} });
+    self.renderer_thread.wakeup.notify() catch {};
 }

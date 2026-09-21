@@ -12,6 +12,8 @@ pub const Message = union(enum) {
     /// See the "crash" binding action.
     crash,
 
+    media_viewport: @import("../media/main.zig").Viewport,
+
     /// A change in state in the window focus that this renderer is
     /// rendering within. This is only sent when a change is detected so
     /// the renderer is expected to handle all of these.

@@ -171,6 +171,17 @@ fn actionCommands(action: Action.Key) []const Command {
             .description = "Copy the terminal title to the clipboard. If the terminal title is not set this has no effect.",
         }},
 
+        .set_holodex_api_key => comptime &.{.{
+            .action = .set_holodex_api_key,
+            .title = "Set Holodex API Key",
+            .description = "Store a Holodex API key in the system credential store.",
+        }},
+        .remove_holodex_api_key => comptime &.{.{
+            .action = .remove_holodex_api_key,
+            .title = "Remove Holodex API Key",
+            .description = "Remove the stored Holodex API key. The environment fallback still applies.",
+        }},
+
         .paste_from_clipboard => comptime &.{.{
             .action = .paste_from_clipboard,
             .title = "Paste from Clipboard",

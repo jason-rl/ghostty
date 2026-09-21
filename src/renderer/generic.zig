@@ -1,3 +1,4 @@
+const media = @import("../media/main.zig");
 const std = @import("std");
 const builtin = @import("builtin");
 const xev = @import("xev");
@@ -178,6 +179,12 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
         /// Background image, if we have one.
         bg_image: ?imagepkg.Image = null,
+        media_manager: *media.Manager,
+        media_player: ?*media.Player = null,
+        media_frame: ?*media.Frame = null,
+        media_viewport: media.Viewport = .{},
+        media_error: ?anyerror = null,
+
         /// Set whenever the background image changes, signalling
         /// that the new background image needs to be uploaded to
         /// the GPU.
@@ -311,6 +318,9 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         ///
         /// This is used to implement double/triple buffering.
         const FrameState = struct {
+            media_texture: ?Texture = null,
+            media_sequence: u64 = 0,
+            media_nv12: bool = false,
             uniforms: UniformBuffer,
             cells: CellTextBuffer,
             cells_bg: CellBgBuffer,
@@ -406,6 +416,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             }
 
             pub fn deinit(self: *FrameState) void {
+                if (self.media_texture) |texture| texture.deinit();
                 self.target.deinit();
                 self.uniforms.deinit();
                 self.cells.deinit();
@@ -560,6 +571,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             padding_color: configpkg.WindowPaddingColor,
             custom_shaders: configpkg.RepeatablePath,
             bg_image: ?configpkg.Path,
+            media_settings: media.Settings,
             bg_image_opacity: f32,
             bg_image_position: configpkg.BackgroundImagePosition,
             bg_image_fit: configpkg.BackgroundImageFit,
@@ -634,6 +646,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
                     .custom_shaders = custom_shaders,
                     .bg_image = bg_image,
+                    .media_settings = try media.Settings.fromConfig(alloc, config),
                     .bg_image_opacity = config.@"background-image-opacity",
                     .bg_image_position = config.@"background-image-position",
                     .bg_image_fit = config.@"background-image-fit",
@@ -700,6 +713,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
             var result: Self = .{
                 .alloc = alloc,
+                .media_manager = options.media,
                 .config = options.config,
                 .surface_mailbox = options.surface_mailbox,
                 .grid_metrics = font_critical.metrics,
@@ -793,11 +807,18 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             result.updateScreenSizeUniforms();
             result.updateBgImageBuffer();
             try result.prepBackgroundImage();
+            result.resetMedia();
 
             return result;
         }
 
         pub fn deinit(self: *Self) void {
+            if (self.media_frame) |frame| frame.release();
+            if (self.media_player) |player| {
+                player.removeViewport(@intFromPtr(self));
+                self.media_manager.release(player);
+            }
+
             if (self.overlay) |*overlay| overlay.deinit(self.alloc);
             self.terminal_state.deinit(self.alloc);
             if (self.search_selected_match) |*m| m.arena.deinit();
@@ -1010,8 +1031,42 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
         /// True if our renderer has animations so that a higher frequency
         /// timer is used.
+        pub fn hasMedia(self: *const Self) bool {
+            return self.media_player != null and
+                (self.config.media_settings.source != .image or self.media_frame == null);
+        }
+
+        pub fn setMediaViewport(self: *Self, viewport: media.Viewport) void {
+            self.draw_mutex.lock();
+            defer self.draw_mutex.unlock();
+            self.media_viewport = viewport;
+            self.updateBgImageBuffer();
+        }
+
+        fn resetMedia(self: *Self) void {
+            const next = self.media_manager.acquire(self.config.media_settings) catch |err| blk: {
+                log.warn("background media configuration failed: {s}", .{@errorName(err)});
+                self.notifyMediaError(err);
+                break :blk null;
+            };
+            const old = self.media_player;
+            if (old) |player| {
+                if (old != next) player.removeViewport(@intFromPtr(self));
+                self.media_manager.release(player);
+            }
+            self.media_player = next;
+            if (old == next) return;
+            if (self.media_frame) |frame| frame.release();
+            self.media_frame = null;
+            self.media_error = null;
+        }
+
+        pub fn animationInterval(self: *const Self) u64 {
+            return if (self.hasMedia() and !self.has_custom_shaders) 1000 / @max(1, self.config.media_settings.max_fps) else 8;
+        }
+
         pub fn hasAnimations(self: *const Self) bool {
-            return self.has_custom_shaders;
+            return self.has_custom_shaders or self.hasMedia();
         }
 
         /// True if our renderer is using vsync. If true, the renderer or apprt
@@ -1472,12 +1527,15 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 self.size.screen.width != surface_size.width or
                 self.size.screen.height != surface_size.height;
 
+            const media_changed = try self.refreshMedia();
+
             // Conditions under which we need to draw the frame, otherwise we
             // don't need to since the previous frame should be identical.
             const needs_redraw =
                 size_changed or
                 self.cells_rebuilt or
-                self.hasAnimations() or
+                self.has_custom_shaders or
+                media_changed or
                 sync;
 
             if (!needs_redraw) {
@@ -1492,6 +1550,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             // Wait for a frame to be available.
             const frame = try self.swap_chain.nextFrame();
             errdefer self.swap_chain.releaseFrame();
+            try self.uploadMedia(frame);
             // log.debug("drawing frame index={}", .{self.swap_chain.frame_index});
 
             // If we need to reinitialize our shaders, do so.
@@ -1609,15 +1668,18 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 //       would require us to do color space conversion on the
                 //       CPU-side. In the future when we have utilities for
                 //       that we should remove this step and use clear_color.
-                if (self.bg_image) |img| switch (img) {
-                    .ready => |texture| pass.step(.{
+                const background_texture: ?Texture = frame.media_texture orelse if (self.bg_image) |img| switch (img) {
+                    .ready => |texture| texture,
+                    else => null,
+                } else null;
+                if (background_texture) |texture| {
+                    pass.step(.{
                         .pipeline = self.shaders.pipelines.bg_image,
                         .uniforms = frame.uniforms.buffer,
                         .buffers = &.{frame.bg_image_buffer.buffer},
                         .textures = &.{texture},
                         .draw = .{ .type = .triangle, .vertex_count = 3 },
-                    }),
-                    else => {},
+                    });
                 } else {
                     pass.step(.{
                         .pipeline = self.shaders.pipelines.bg_color,
@@ -1825,6 +1887,80 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             }
         }
 
+        fn notifyMediaError(self: *Self, err: anyerror) void {
+            // Notifications carry only fixed diagnostic text, never tool output,
+            // signed stream URLs, API responses, or credentials.
+            var title: [63:0]u8 = @splat(0);
+            var body: [255:0]u8 = @splat(0);
+            const name = "Background Media";
+            const message = media.errorMessage(err);
+            @memcpy(title[0..name.len], name);
+            @memcpy(body[0..@min(body.len, message.len)], message[0..@min(body.len, message.len)]);
+            _ = self.surface_mailbox.push(.{ .desktop_notification = .{ .title = title, .body = body } }, .{ .instant = {} });
+        }
+
+        fn refreshMedia(self: *Self) !bool {
+            const player = self.media_player orelse return false;
+            var viewport = self.media_viewport;
+            if (viewport.width <= 0 or viewport.height <= 0) viewport = .{
+                .width = @floatFromInt(self.size.screen.width),
+                .height = @floatFromInt(self.size.screen.height),
+            };
+            player.viewport(@intFromPtr(self), viewport);
+            if (player.getError()) |err| {
+                if (self.media_error == null or self.media_error.? != err) {
+                    log.warn("background media: {s}", .{@errorName(err)});
+                    self.media_error = err;
+                    self.notifyMediaError(err);
+                }
+            }
+            const next = player.snapshot() orelse return false;
+            if (self.media_frame) |old| {
+                if (old.sequence == next.sequence) {
+                    next.release();
+                    return false;
+                }
+                old.release();
+            } else self.markDirty();
+            self.media_frame = next;
+            self.updateBgImageBuffer();
+            return true;
+        }
+
+        /// Each swap-chain frame owns its upload texture. nextFrame waits for
+        /// GPU completion before we overwrite it, bounding uploads and memory.
+        fn uploadMedia(self: *Self, frame: *FrameState) !void {
+            const source = self.media_frame orelse {
+                if (frame.media_texture) |texture| texture.deinit();
+                frame.media_texture = null;
+                frame.media_sequence = 0;
+                return;
+            };
+            const height = if (source.nv12) source.height * 3 / 2 else source.height;
+            if (frame.media_texture) |texture| {
+                if (texture.width != source.width or texture.height != height or frame.media_nv12 != source.nv12) {
+                    texture.deinit();
+                    frame.media_texture = null;
+                    frame.media_sequence = 0;
+                }
+            }
+            if (frame.media_texture == null) {
+                frame.media_texture = try Texture.init(
+                    self.api.imageTextureOptions(if (source.nv12) .gray else .rgba, !source.nv12),
+                    source.width,
+                    height,
+                    null,
+                );
+                frame.media_nv12 = source.nv12;
+            }
+            // Players can restart with the same sequence; config changes reset
+            // per-frame sequence numbers below.
+            if (frame.media_sequence != source.sequence) {
+                try frame.media_texture.?.replaceRegion(0, 0, source.width, height, source.data);
+                frame.media_sequence = source.sequence;
+            }
+        }
+
         fn uploadBackgroundImage(self: *Self) !void {
             // Make sure our bg image is uploaded if it needs to be.
             if (self.bg_image) |*bg| {
@@ -1888,6 +2024,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
             self.config.deinit();
             self.config = config.*;
+            self.resetMedia();
+            self.updateBgImageBuffer();
 
             // If our background image path changed, prepare the new bg image.
             if (bg_image_changed) try self.prepBackgroundImage();
@@ -2000,6 +2138,14 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     .repeat = self.config.bg_image_repeat,
                 },
             };
+            if (self.media_frame) |frame| {
+                self.bg_image_buffer.opacity = self.config.media_settings.opacity;
+                self.bg_image_buffer.info.position = .mc;
+                self.bg_image_buffer.info.fit = if (self.config.media_settings.fit == .cover) .cover else .contain;
+                self.bg_image_buffer.info.repeat = false;
+                self.bg_image_buffer.info.nv12 = frame.nv12;
+                self.bg_image_buffer.viewport = .{ self.media_viewport.x, self.media_viewport.y, self.media_viewport.width, self.media_viewport.height };
+            }
             // Signal that the buffer was modified.
             self.bg_image_buffer_modified +%= 1;
         }
@@ -2893,6 +3039,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
                         // Cells that are reversed should be fully opaque.
                         if (style.flags.inverse) break :bg_alpha default;
+
+                        if (self.media_frame != null and bg_style != null) break :bg_alpha 89;
 
                         // If the user requested to have opacity on all cells, apply it.
                         if (self.config.background_opacity_cells and bg_style != null) {

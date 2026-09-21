@@ -4,6 +4,7 @@ layout(binding = 0) uniform sampler2D image;
 
 layout(location = 0) in float in_opacity;
 layout(location = 1) in uint info;
+layout(location = 2) in vec4 viewport;
 
 // 4 bits of info.
 const uint BG_IMAGE_POSITION = 15u;
@@ -34,6 +35,7 @@ flat out float opacity;
 // We use a uint to pass the repeat value because
 // bools aren't allowed for vertex outputs in OpenGL.
 flat out uint repeat;
+flat out uint nv12;
 
 void main() {
     bool use_linear_blending = (bools & USE_LINEAR_BLENDING) != 0;
@@ -62,9 +64,11 @@ void main() {
     opacity = in_opacity;
 
     repeat = info & BG_IMAGE_REPEAT;
+    nv12 = info & 128u;
 
-    vec2 screen_size = screen_size;
+    vec2 canvas_size = viewport.z > 0.0 ? viewport.zw : screen_size;
     vec2 tex_size = textureSize(image, 0);
+    if (nv12 != 0u) tex_size.y *= 2.0 / 3.0;
 
     vec2 dest_size = tex_size;
     switch (info & BG_IMAGE_FIT) {
@@ -72,7 +76,7 @@ void main() {
         // width match the screen width or makes the image height
         // match the screen height, whichever is smaller.
         case BG_IMAGE_CONTAIN: {
-            float scale = min(screen_size.x / tex_size.x, screen_size.y / tex_size.y);
+            float scale = min(canvas_size.x / tex_size.x, canvas_size.y / tex_size.y);
             dest_size = tex_size * scale;
         } break;
 
@@ -80,14 +84,14 @@ void main() {
         // width match the screen width or makes the image height
         // match the screen height, whichever is larger.
         case BG_IMAGE_COVER: {
-            float scale = max(screen_size.x / tex_size.x, screen_size.y / tex_size.y);
+            float scale = max(canvas_size.x / tex_size.x, canvas_size.y / tex_size.y);
             dest_size = tex_size * scale;
         } break;
 
         // For `stretch` we stretch the image to the size of
         // the screen without worrying about aspect ratio.
         case BG_IMAGE_STRETCH: {
-            dest_size = screen_size;
+            dest_size = canvas_size;
         } break;
 
         // For `none` we just use the original texture size.
@@ -97,8 +101,8 @@ void main() {
     }
 
     vec2 start = vec2(0.0);
-    vec2 mid = (screen_size - dest_size) / vec2(2.0);
-    vec2 end = screen_size - dest_size;
+    vec2 mid = (canvas_size - dest_size) / vec2(2.0);
+    vec2 end = canvas_size - dest_size;
 
     vec2 dest_offset = mid;
     switch (info & BG_IMAGE_POSITION) {
@@ -131,7 +135,7 @@ void main() {
         } break;
     }
 
-    offset = dest_offset;
+    offset = dest_offset - viewport.xy;
     scale = tex_size / dest_size;
 
     // We load a fully opaque version of the bg color and combine it with

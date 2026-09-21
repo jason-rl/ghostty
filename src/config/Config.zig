@@ -694,6 +694,36 @@ foreground: Color = .{ .r = 0xFF, .g = 0xFF, .b = 0xFF },
 /// Available since: 1.2.0
 @"background-image-repeat": bool = false,
 
+/// Background media source: none, image, gif, video, youtube-video, youtube-live,
+/// or holodex. Media spans the terminal content area across splits. Requires
+/// FFmpeg and ffprobe for animation/video and yt-dlp for YouTube. Audio is muted.
+/// See docs/background-media.md. Changes apply on configuration reload.
+@"background-media-source": @import("../media/Settings.zig").Source = .none,
+/// Absolute path (or ~/ path) for image, gif, and video sources.
+@"background-media-path": ?[:0]const u8 = null,
+/// HTTPS YouTube video or livestream URL. Playlists are not accepted.
+@"background-media-url": ?[:0]const u8 = null,
+/// Ordered Holodex channel ID. Repeat this setting for additional channels.
+@"background-media-channel": RepeatableString = .{},
+/// Media opacity, from zero to one, mixed over the terminal background.
+@"background-media-opacity": f32 = 0.2,
+/// Scale media to cover the window or contain the entire frame.
+@"background-media-fit": @import("../media/Settings.zig").Fit = .cover,
+/// Maximum delivered media frames per second, from 1 to 60.
+@"background-media-max-fps": u32 = 30,
+/// Optional media resolution ceiling in physical pixels, from 2 to 8192.
+@"background-media-max-height": ?u32 = null,
+/// Attempt hardware decoding automatically, or disable it with off.
+@"background-media-hardware-acceleration": @import("../media/Settings.zig").Acceleration = .auto,
+/// Persistent YouTube cache budget in MiB, including partial downloads.
+@"background-media-cache-size-mb": u64 = 10240,
+/// FFmpeg executable name or absolute path, not a shell command.
+@"background-media-ffmpeg-path": [:0]const u8 = "ffmpeg",
+/// ffprobe executable name or absolute path, not a shell command.
+@"background-media-ffprobe-path": [:0]const u8 = "ffprobe",
+/// yt-dlp executable name or absolute path, not a shell command.
+@"background-media-yt-dlp-path": [:0]const u8 = "yt-dlp",
+
 /// The foreground and background color for selection. If this is not set, then
 /// the selection color is just the inverted window background and foreground
 /// (note: not to be confused with the cell bg/fg).

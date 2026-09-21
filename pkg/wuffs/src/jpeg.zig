@@ -11,6 +11,11 @@ const log = std.log.scoped(.wuffs_jpeg);
 
 /// Decode a JPEG image.
 pub fn decode(alloc: Allocator, data: []const u8) Error!ImageData {
+    return decodeWithLimit(alloc, data, maximum_image_size);
+}
+
+/// Limit decoded allocation before reading image pixels.
+pub fn decodeWithLimit(alloc: Allocator, data: []const u8, limit: usize) Error!ImageData {
     // Work around some weirdness in WUFFS/Zig, there are some structs that
     // are defined as "extern" by the Zig compiler which means that Zig won't
     // allocate them on the stack at compile time. WUFFS has functions for
@@ -69,8 +74,8 @@ pub fn decode(alloc: Allocator, data: []const u8) Error!ImageData {
         @sizeOf(c.wuffs_base__color_u32_argb_premul),
     );
 
-    if (size > maximum_image_size) {
-        log.warn("image size {d} is larger than the maximum allowed ({d})", .{ size, maximum_image_size });
+    if (size > limit) {
+        log.warn("image size {d} is larger than the maximum allowed ({d})", .{ size, limit });
         return error.Overflow;
     }
 

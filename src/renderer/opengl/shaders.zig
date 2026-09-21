@@ -271,12 +271,13 @@ pub const Image = extern struct {
 pub const BgImage = extern struct {
     opacity: f32 align(4),
     info: Info align(1),
+    viewport: [4]f32 align(16) = .{ 0, 0, 0, 0 },
 
     pub const Info = packed struct(u8) {
         position: Position,
         fit: Fit,
         repeat: bool,
-        _padding: u1 = 0,
+        nv12: bool = false,
 
         pub const Position = enum(u4) {
             tl = 0,

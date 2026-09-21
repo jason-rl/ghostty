@@ -921,6 +921,7 @@ typedef enum {
   GHOSTTY_ACTION_SEARCH_SELECTED,
   GHOSTTY_ACTION_READONLY,
   GHOSTTY_ACTION_COPY_TITLE_TO_CLIPBOARD,
+  GHOSTTY_ACTION_HOLODEX_KEY,
 } ghostty_action_tag_e;
 
 typedef union {
@@ -962,6 +963,7 @@ typedef union {
   ghostty_action_search_total_s search_total;
   ghostty_action_search_selected_s search_selected;
   ghostty_action_readonly_e readonly;
+  struct { bool remove; } holodex_key;
 } ghostty_action_u;
 
 typedef struct {
@@ -1086,6 +1088,10 @@ void ghostty_surface_set_content_scale(ghostty_surface_t, double, double);
 void ghostty_surface_set_focus(ghostty_surface_t, bool);
 void ghostty_surface_set_occlusion(ghostty_surface_t, bool);
 void ghostty_surface_set_size(ghostty_surface_t, uint32_t, uint32_t);
+// Window-relative terminal content viewport, in physical pixels.
+void ghostty_surface_set_media_viewport(ghostty_surface_t, float, float, float, float);
+// The native credential store result. NULL means no stored key; errors never fall back.
+void ghostty_app_set_holodex_key(ghostty_app_t, const char*, bool);
 ghostty_surface_size_s ghostty_surface_size(ghostty_surface_t);
 void ghostty_surface_set_color_scheme(ghostty_surface_t,
                                       ghostty_color_scheme_e);
