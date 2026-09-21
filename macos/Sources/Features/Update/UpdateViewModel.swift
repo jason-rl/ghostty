@@ -273,10 +273,31 @@ enum UpdateState: Equatable {
     }
 
     struct UpdateAvailable {
-        let appcastItem: SUAppcastItem
+        struct Item {
+            let displayVersionString: String
+            let contentLength: UInt64
+            let date: Date?
+        }
+        let appcastItem: Item
+        var fork = false
+
+        init(appcastItem: SUAppcastItem, reply: @escaping @Sendable (SPUUserUpdateChoice) -> Void) {
+            self.appcastItem = Item(displayVersionString: appcastItem.displayVersionString,
+                                   contentLength: appcastItem.contentLength, date: appcastItem.date)
+            self.reply = reply
+        }
+
+        init(forkVersion: String, reply: @escaping @Sendable (SPUUserUpdateChoice) -> Void) {
+            appcastItem = Item(displayVersionString: forkVersion, contentLength: 0, date: nil)
+            self.reply = reply
+            fork = true
+        }
         let reply: @Sendable (SPUUserUpdateChoice) -> Void
 
         var releaseNotes: ReleaseNotes? {
+            if fork {
+                return .tagged(URL(string: "https://github.com/\(ForkRelease.repository)/releases/tag/v\(appcastItem.displayVersionString)")!)
+            }
             let currentCommit = Bundle.main.infoDictionary?["GhosttyCommit"] as? String
             return ReleaseNotes(displayVersionString: appcastItem.displayVersionString, currentCommit: currentCommit)
         }

@@ -10,6 +10,23 @@ import Combine
 class UpdateController {
     private(set) var updater: SPUUpdater
     private let userDriver: UpdateDriver
+    private lazy var forkUpdater = ForkUpdater(viewModel: userDriver.viewModel)
+    private var usesFork: Bool { Bundle.main.infoDictionary?["GhosttyForkUpdates"] as? Bool == true }
+
+    func configure(check: Bool, download: Bool) {
+        if usesFork {
+            forkUpdater.automaticallyChecksForUpdates = check
+            forkUpdater.automaticallyDownloadsUpdates = download
+        } else {
+            updater.automaticallyChecksForUpdates = check
+            updater.automaticallyDownloadsUpdates = download
+        }
+    }
+
+    func willTerminate() {
+        if usesFork { forkUpdater.willTerminate() }
+    }
+
     private var installCancellable: AnyCancellable?
 
     var viewModel: UpdateViewModel {
@@ -44,6 +61,7 @@ class UpdateController {
     /// This must be called before the updater can check for updates. If starting fails,
     /// the error will be shown to the user.
     func startUpdater() {
+        if usesFork { forkUpdater.start(); return }
         do {
             try updater.start()
         } catch {
@@ -63,6 +81,7 @@ class UpdateController {
     /// Force install the current update. As long as we're in some "update available" state this will
     /// trigger all the steps necessary to complete the update.
     func installUpdate() {
+        if usesFork { forkUpdater.install(); return }
         // Must be in an installable state
         guard viewModel.state.isInstallable else { return }
 
@@ -92,6 +111,7 @@ class UpdateController {
     ///
     /// This is typically connected to a menu item action.
     @objc func checkForUpdates() {
+        if usesFork { forkUpdater.check(); return }
         // If we're already idle, then just check for updates immediately.
         if viewModel.state == .idle {
             updater.checkForUpdates()
@@ -116,7 +136,7 @@ class UpdateController {
     /// - Returns: Whether the menu item should be enabled
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         if item.action == #selector(checkForUpdates) {
-            return updater.canCheckForUpdates
+            return usesFork ? forkUpdater.canCheck : updater.canCheckForUpdates
         }
         return true
     }

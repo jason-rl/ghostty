@@ -427,6 +427,7 @@ class AppDelegate: NSObject,
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        updateController.willTerminate()
         // We have no notifications we want to persist after death,
         // so remove them all now. In the future we may want to be
         // more selective and only remove surface-targeted notifications.
@@ -766,13 +767,10 @@ class AppDelegate: NSObject,
         // defined by our "auto-update" configuration (if set) or fall back to Sparkle
         // user-based defaults.
         if Bundle.main.infoDictionary?["SUEnableAutomaticChecks"] as? Bool == false {
-            updateController.updater.automaticallyChecksForUpdates = false
-            updateController.updater.automaticallyDownloadsUpdates = false
+            updateController.configure(check: false, download: false)
         } else if let autoUpdate = config.autoUpdate {
-            updateController.updater.automaticallyChecksForUpdates =
-                autoUpdate == .check || autoUpdate == .download
-            updateController.updater.automaticallyDownloadsUpdates =
-                autoUpdate == .download
+            updateController.configure(check: autoUpdate == .check || autoUpdate == .download,
+                                       download: autoUpdate == .download)
             /*
              To test `auto-update` easily, uncomment the line below and
              delete `SUEnableAutomaticChecks` in Ghostty-Info.plist.
