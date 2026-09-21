@@ -15,6 +15,22 @@ pub fn init(
     deps: *const SharedDeps,
     target: Target,
 ) !GhosttyXCFramework {
+    // A native build must not initialize iOS dependencies (or require iOS SDKs).
+    if (target == .native) {
+        const native = try GhosttyLib.initStatic(b, &try deps.retarget(
+            b,
+            Config.genericMacOSTarget(b, null),
+        ));
+        return .{
+            .target = target,
+            .xcframework = XCFrameworkStep.create(b, .{
+                .name = "GhosttyKit",
+                .out_path = "macos/GhosttyKit.xcframework",
+                .libraries = &.{.{ .library = native.output, .headers = b.path("include"), .dsym = native.dsym }},
+            }),
+        };
+    }
+
     // Universal macOS build
     const macos_universal = try GhosttyLib.initMacOSUniversal(b, deps);
 
